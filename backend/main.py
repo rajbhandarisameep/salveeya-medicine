@@ -3,20 +3,38 @@ Salveeya Medicine — FastAPI Backend
 Entry point for the API server.
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 from datetime import date, datetime, timedelta
 import models, schemas
 from database import engine, get_db
 
-# Create DB tables
-models.Base.metadata.create_all(bind=engine)
+# Try to create DB tables — don't crash if the cloud DB is temporarily unreachable
+try:
+    models.Base.metadata.create_all(bind=engine)
+    print("✅ Connected to database and created tables successfully.")
+except Exception as e:
+    print(f"⚠️  Could not connect to database on startup: {e}")
+    print("   The server will start, but DB operations will fail until connectivity is restored.")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Retry table creation on startup (in case first attempt failed)
+    try:
+        models.Base.metadata.create_all(bind=engine)
+    except Exception:
+        pass
+    yield
+
 
 app = FastAPI(
     title="Salveeya Medicine API",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Enable CORS for Next.js frontend
